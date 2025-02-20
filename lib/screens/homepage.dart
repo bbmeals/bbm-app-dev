@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/cart_provider.dart';
+import '../providers/item_counter.dart';
+import '../theme/app_theme.dart';
 import 'menu_page.dart';
 import 'package:built_better_app/components/navbar.dart';
 
@@ -9,213 +13,89 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+// Updated HomePage widget
 class _HomePageState extends State<HomePage> {
-  // Track the number of items in the cart.
-  int _cartItemCount = 0;
-
-  // Figma color references
-  static const Color orangeColor = Color(0xFFFF7043); // #FF7043
-  static const Color tealColor = Color(0xFF009788);   // #009788
-  static const Color grayColor = Color(0xFFD9D9D9);   // #D9D9D9
+  int _currentNavIndex = 0;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      bottomNavigationBar: const CustomBottomNavBar(),
-      body: SingleChildScrollView(
-        child: Center(
-          // Center horizontally so the 402px-wide content is centered
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: 61),
+    final cartProvider = Provider.of<CartProvider>(context);
 
-              // -- Top Row with Notifications (left) and Cart (right) --
-              Container(
-                width: 402,
-                height: 33,
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                color: Colors.white,
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        toolbarHeight: 60,
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.notifications_outlined),
+              onPressed: () {},
+            ),
+            CartBadge(
+              value: cartProvider.itemCount.toString(),
+              child: IconButton(
+                icon: const Icon(Icons.shopping_bag_outlined),
+                onPressed: () {
+                  Navigator.pushNamed(context, '/cart');
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: _currentNavIndex,
+        onItemTapped: (index) {
+          setState(() {
+            _currentNavIndex = index;
+          });
+        },
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Hero Banner
+              _buildHeroBanner(),
+
+              // Promo Card
+              _buildPromoCard(),
+
+              // Menu Section Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Left: Notifications
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.notifications),
+                    const Text(
+                      'Our menu',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-
-                    // Right: Cart with a badge showing how many items
-                    Stack(
-                      children: [
-                        IconButton(
-                          onPressed: () {
-                            // Navigate to a cart page or show a modal, etc.
-                          },
-                          icon: const Icon(Icons.shopping_bag),
-                        ),
-                        if (_cartItemCount > 0)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Text(
-                                '$_cartItemCount',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/menu');
+                      },
+                      child: Row(
+                        children: const [
+                          Text('View all items'),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_forward, size: 16),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
 
-              // -- Hero Image (approx. 362×177) --
-              const SizedBox(
-                width: 362,
-                height: 177,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: grayColor,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'Hero Image',
-                      style: TextStyle(color: Colors.black45),
-                    ),
-                  ),
-                ),
-              ),
-
-              // -- Promo Section --
-              Padding(
-                padding: const EdgeInsets.only(top: 10.0, left: 8.0),
-                child: Container(
-                  width: 362,
-                  height: 110,
-                  decoration: BoxDecoration(
-                    color: orangeColor,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Stack(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 13.0,
-                          vertical: 13.0,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Your first order is on us!',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Colors.black,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                              ),
-                              onPressed: () {},
-                              child: const Text('Order now'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Positioned(
-                        top: 13,
-                        right: 13,
-                        child: CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.white,
-                          child: Text(
-                            'M',
-                            style: TextStyle(
-                              color: Theme.of(context).primaryColorDark,
-                              fontSize: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // -- "Our menu" row with "View all items"
-              SizedBox(
-                width: 362,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 20, left: 10, right: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Our menu',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => MenuPage()),
-                          );
-                        },
-                        child: const Text('View all items'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // -- Menu Items --
-              _buildMenuItem(
-                title: 'Roasted Salmon',
-                price: '\$7.95',
-                description:
-                'Roasted salmon with rice, vegetables and sauce.\nAllergens: Dairy, Gluten\nNutritional info: 450kcal, 38g protein, 45g fat',
-                imageAsset: 'assets/images/Food1.jpg',
-              ),
-              _buildMenuItem(
-                title: 'Roasted Salmon',
-                price: '\$7.95',
-                description:
-                'Roasted salmon with rice, vegetables and sauce.\nAllergens: Dairy, Gluten\nNutritional info: 450kcal, 38g protein, 45g fat',
-                imageAsset: 'assets/images/Food1.jpg',
-              ),
-              _buildMenuItem(
-                title: 'Roasted Salmon',
-                price: '\$7.95',
-                description:
-                'Roasted salmon with rice, vegetables and sauce.\nAllergens: Dairy, Gluten\nNutritional info: 450kcal, 38g protein, 45g fat',
-                imageAsset: 'assets/images/Food1.jpg',
-              ),
-
-              const SizedBox(height: 40),
+              // Featured Menu Items
+              _buildFeaturedMenuItems(),
             ],
           ),
         ),
@@ -223,99 +103,332 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Builds a menu item row where the "+" button is placed on the image itself
-  Widget _buildMenuItem({
-    required String title,
-    required String price,
-    required String description,
-    required String imageAsset,
-  }) {
-    return SizedBox(
-      width: 362,
-      height: 128,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Food Image + the '+' icon on top of it
-            SizedBox(
-              width: 128,
-              height: 128,
-              child: Stack(
+  Widget _buildHeroBanner() {
+    return AspectRatio(
+      aspectRatio: 16/9,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        decoration: BoxDecoration(
+          color: AppColors.disabled,
+          borderRadius: BorderRadius.circular(12),
+          image: const DecorationImage(
+            image: AssetImage('assets/images/promotion1.webp'),
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPromoCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 24), // Increased bottom margin
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        borderRadius: BorderRadius.circular(12), // Matching the 12px radius from images
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(15),
-                    child: Image.asset(
-                      imageAsset,
-                      width: 128,
-                      height: 128,
-                      fit: BoxFit.cover,
+                  const Text(
+                    'Your first order is on us!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  // White circular button with black "+" at bottom-right corner
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _cartItemCount++;
-                        });
-                      },
-                      child: CircleAvatar(
-                        radius: 16,
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Ends 1/31.',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20), // More rounded buttons in the image
+                    ),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
-                        child: const Icon(
-                          Icons.add,
-                          color: Colors.black,
-                          size: 20,
+                        foregroundColor: Colors.black87,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
                         ),
+                      ),
+                      onPressed: () {},
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Text('Order now'),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_forward, size: 16),
+                        ],
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            // Text info
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$title',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      ' $price',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+          ),
+          Container(
+            width: 80,
+            height: 80,
+            margin: const EdgeInsets.only(right: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeaturedMenuItems() {
+    // Sample menu items - in a real app, these would come from a data source
+    final List<Map<String, dynamic>> featuredItems = [
+      {
+        'id': '1',
+        'title': 'Roasted Salmon',
+        'price': 7.95,
+        'description': 'Roasted salmon with rice, vegetables and sauce.',
+        'allergens': 'Dairy, Gluten',
+        'nutrition': '450kcal, 38g protein, 45g fat',
+        'image': 'assets/images/Food1.jpg',
+      },
+      {
+        'id': '2',
+        'title': 'Grilled Chicken',
+        'price': 7.95,
+        'description': 'Grilled chicken with seasonal vegetables and special sauce.',
+        'allergens': 'Dairy',
+        'nutrition': '380kcal, 42g protein, 22g fat',
+        'image': 'assets/images/Food1.jpg',
+      },
+      {
+        'id': '3',
+        'title': 'Vegetable Stir Fry',
+        'price': 6.95,
+        'description': 'Fresh vegetables stir-fried with tofu and special sauce.',
+        'allergens': 'Soy',
+        'nutrition': '320kcal, 18g protein, 14g fat',
+        'image': 'assets/images/Food1.jpg',
+      },
+    ];
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: featuredItems.length,
+      itemBuilder: (context, index) {
+        final item = featuredItems[index];
+        return _buildMenuItem(
+          id: item['id'],
+          title: item['title'],
+          price: item['price'],
+          description: item['description'],
+          allergens: item['allergens'],
+          nutrition: item['nutrition'],
+          imageAsset: item['image'],
+        );
+      },
+    );
+  }
+
+  Widget _buildMenuItem({
+    required String id,
+    required String title,
+    required double price,
+    required String description,
+    required String allergens,
+    required String nutrition,
+    required String imageAsset,
+  }) {
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      height: 130,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Food Image with Add/Counter button
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.asset(
+                  imageAsset,
+                  width: 130,
+                  height: 130,
+                  fit: BoxFit.cover,
                 ),
               ),
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: AnimatedItemCounter(
+                  productId: id,
+                  onAdd: () {
+                    cartProvider.addItem(
+                      productId: id,
+                      title: title,
+                      price: price,
+                      image: imageAsset,
+                      description: description,
+                      allergens: allergens,
+                      nutritionInfo: nutrition,
+                    );
+
+                    // Show a snackbar only on the first add
+                    if (cartProvider.getItemQuantity(id) == 1) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('$title added to cart'),
+                          duration: const Duration(seconds: 1),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                  onRemove: () {
+                    cartProvider.decrementItem(id);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 16),
+
+          // Text info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '\$${price.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                const Spacer(),
+                Row(
+                  children: [
+                    _buildInfoChip('Allergens: $allergens'),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Nutritional info: $nutrition',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.black45,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.grey[800],
         ),
       ),
+    );
+  }
+}
+
+// CartBadge widget
+class CartBadge extends StatelessWidget {
+  final Widget child;
+  final String value;
+  final Color? color;
+
+  const CartBadge({
+    Key? key,
+    required this.child,
+    required this.value,
+    this.color,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        child,
+        if (value != '0')
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: color ?? Colors.red,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 16,
+                minHeight: 16,
+              ),
+              child: Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
