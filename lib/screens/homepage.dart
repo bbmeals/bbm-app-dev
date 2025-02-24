@@ -5,6 +5,8 @@ import '../providers/item_counter.dart';
 import '../theme/app_theme.dart';
 import 'menu_page.dart';
 import 'package:built_better_app/components/navbar.dart';
+import '../services/restaurant_service.dart';
+import '../models/restaurant.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -13,9 +15,15 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-// Updated HomePage widget
 class _HomePageState extends State<HomePage> {
   int _currentNavIndex = 0;
+  late Future<Restaurant> restaurantFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    restaurantFuture = fetchRestaurantData();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,49 +63,74 @@ class _HomePageState extends State<HomePage> {
         },
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Hero Banner
-              _buildHeroBanner(),
-
-              // Promo Card
-              _buildPromoCard(),
-
-              // Menu Section Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: FutureBuilder<Restaurant>(
+          future: restaurantFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            } else if (snapshot.hasData) {
+              final restaurant = snapshot.data!;
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Our menu',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/menu');
-                      },
+                    _buildHeroBanner(),
+                    _buildPromoCard(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                       child: Row(
-                        children: const [
-                          Text('View all items'),
-                          SizedBox(width: 4),
-                          Icon(Icons.arrow_forward, size: 16),
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Our menu',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/menu');
+                            },
+                            child: Row(
+                              children: const [
+                                Text('View all items'),
+                                SizedBox(width: 4),
+                                Icon(Icons.arrow_forward, size: 16),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: restaurant.menu.length > 3 ? 3 : restaurant.menu.length,
+                      itemBuilder: (context, index) {
+                        final item = restaurant.menu[index];
+                        return _buildMenuItem(
+                          id: '$index', // Replace with a unique identifier if available
+                          title: item.name,
+                          price: item.price.toDouble(),
+                          description: item.description,
+                          allergens: item.allergens.join(', '),
+                          nutrition: item.nutrition.entries
+                              .map((e) => '${e.key}: ${e.value}')
+                              .join(', '),
+                          imageAsset: item.imageUrl,
+                        );
+                      },
+                    ),
+
                   ],
                 ),
-              ),
-
-              // Featured Menu Items
-              _buildFeaturedMenuItems(),
-            ],
-          ),
+              );
+            }
+            return const SizedBox.shrink();
+          },
         ),
       ),
     );
@@ -105,7 +138,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHeroBanner() {
     return AspectRatio(
-      aspectRatio: 16/9,
+      aspectRatio: 16 / 9,
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         decoration: BoxDecoration(
@@ -122,10 +155,10 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildPromoCard() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 24), // Increased bottom margin
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       decoration: BoxDecoration(
         color: AppColors.secondary,
-        borderRadius: BorderRadius.circular(12), // Matching the 12px radius from images
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
@@ -155,7 +188,7 @@ class _HomePageState extends State<HomePage> {
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(20), // More rounded buttons in the image
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -196,57 +229,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildFeaturedMenuItems() {
-    // Sample menu items - in a real app, these would come from a data source
-    final List<Map<String, dynamic>> featuredItems = [
-      {
-        'id': '1',
-        'title': 'Roasted Salmon',
-        'price': 7.95,
-        'description': 'Roasted salmon with rice, vegetables and sauce.',
-        'allergens': 'Dairy, Gluten',
-        'nutrition': '450kcal, 38g protein, 45g fat',
-        'image': 'assets/images/Food1.jpg',
-      },
-      {
-        'id': '2',
-        'title': 'Grilled Chicken',
-        'price': 7.95,
-        'description': 'Grilled chicken with seasonal vegetables and special sauce.',
-        'allergens': 'Dairy',
-        'nutrition': '380kcal, 42g protein, 22g fat',
-        'image': 'assets/images/Food1.jpg',
-      },
-      {
-        'id': '3',
-        'title': 'Vegetable Stir Fry',
-        'price': 6.95,
-        'description': 'Fresh vegetables stir-fried with tofu and special sauce.',
-        'allergens': 'Soy',
-        'nutrition': '320kcal, 18g protein, 14g fat',
-        'image': 'assets/images/Food1.jpg',
-      },
-    ];
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: featuredItems.length,
-      itemBuilder: (context, index) {
-        final item = featuredItems[index];
-        return _buildMenuItem(
-          id: item['id'],
-          title: item['title'],
-          price: item['price'],
-          description: item['description'],
-          allergens: item['allergens'],
-          nutrition: item['nutrition'],
-          imageAsset: item['image'],
-        );
-      },
-    );
-  }
-
   Widget _buildMenuItem({
     required String id,
     required String title,
@@ -257,19 +239,18 @@ class _HomePageState extends State<HomePage> {
     required String imageAsset,
   }) {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
-
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       height: 130,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Food Image with Add/Counter button
+          // Food image and counter
           Stack(
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.asset(
+                child: Image.network(
                   imageAsset,
                   width: 130,
                   height: 130,
@@ -291,8 +272,6 @@ class _HomePageState extends State<HomePage> {
                       allergens: allergens,
                       nutritionInfo: nutrition,
                     );
-
-                    // Show a snackbar only on the first add
                     if (cartProvider.getItemQuantity(id) == 1) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -311,8 +290,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           const SizedBox(width: 16),
-
-          // Text info
+          // Text information for the menu item
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -320,14 +298,14 @@ class _HomePageState extends State<HomePage> {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
                   '\$${price.toStringAsFixed(2)}',
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 10,
                     fontWeight: FontWeight.w600,
                     color: AppColors.primary,
                   ),
@@ -342,11 +320,13 @@ class _HomePageState extends State<HomePage> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
                 const Spacer(),
+                // Wrap the info chip in Flexible to avoid overflow
                 Row(
                   children: [
-                    _buildInfoChip('Allergens: $allergens'),
+                    Flexible(
+                      child: _buildInfoChip('Allergens: $allergens'),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -385,7 +365,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// CartBadge widget
+// Custom CartBadge widget definition
 class CartBadge extends StatelessWidget {
   final Widget child;
   final String value;

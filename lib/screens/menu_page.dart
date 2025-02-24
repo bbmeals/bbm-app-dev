@@ -1,22 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:built_better_app/components/navbar.dart';
 import 'package:provider/provider.dart';
-
 import '../providers/cart_provider.dart';
-import '../providers/item_counter.dart';
 import '../theme/app_theme.dart';
-import 'homepage.dart';
+import '../providers/item_counter.dart';
+import '../services/restaurant_service.dart';
+import '../models/restaurant.dart';
+import 'package:built_better_app/components/navbar.dart';
 
 class MenuPage extends StatefulWidget {
   @override
   _MenuPageState createState() => _MenuPageState();
 }
 
-// Updated MenuPage
 class _MenuPageState extends State<MenuPage> {
-  int _selectedFilterIndex = 0;
-  final List<String> _filters = ['All', 'Vegan', 'Low Carb', 'High Protein'];
   String _activeFilter = 'All';
+  late Future<Restaurant> restaurantFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    restaurantFuture = fetchRestaurantData();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +50,7 @@ class _MenuPageState extends State<MenuPage> {
         ],
       ),
       bottomNavigationBar: CustomBottomNavBar(
-        selectedIndex: 1, // Highlight the 'Orders' tab
+        selectedIndex: 1, // Highlight the correct tab.
         onItemTapped: (index) {
           if (index == 0) {
             Navigator.pushReplacementNamed(context, '/');
@@ -54,30 +58,63 @@ class _MenuPageState extends State<MenuPage> {
         },
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildFilterRow(),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
+        child: FutureBuilder<Restaurant>(
+          future: restaurantFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            } else if (snapshot.hasData) {
+              final restaurant = snapshot.data!;
+              // Example filter list; adjust or build dynamically if needed.
+              List<String> filters = [
+                'All',
+                'Main Course',
+                'Salad',
+                'Wrap',
+                'Soup',
+                'Sandwich',
+                'Rice Bowl',
+                'Snack'
+              ];
+              // Filter the menu items based on the active filter.
+              final filteredMenu = _activeFilter == 'All'
+                  ? restaurant.menu
+                  : restaurant.menu
+                  .where((item) => item.category == _activeFilter)
+                  .toList();
+
+              // Build menu widgets from filtered items.
+              final menuWidgets = filteredMenu
+                  .map((item) => _buildMenuItem(item, cartProvider))
+                  .toList();
+
+              // Insert the promotional banner (Trust the Chef card) if there are enough items.
+              if (filteredMenu.length > 2) {
+                menuWidgets.insert(2, _buildTrustTheChefCard(cartProvider));
+              }
+
+              return Column(
                 children: [
-                  _buildMenuSection('Main Dishes'),
-                  ..._buildMenuItems().take(2),
-
-                  _buildTrustTheChefCard(),
-
-                  _buildMenuSection('Sides & Extras'),
-                  ..._buildMenuItems().skip(2),
+                  _buildFilterRow(filters),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: menuWidgets,
+                    ),
+                  ),
                 ],
-              ),
-            ),
-          ],
+              );
+            }
+            return const SizedBox.shrink();
+          },
         ),
       ),
     );
   }
 
-  Widget _buildFilterRow() {
+  Widget _buildFilterRow(List<String> filters) {
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -93,18 +130,16 @@ class _MenuPageState extends State<MenuPage> {
       ),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _filters.length,
+        itemCount: filters.length,
         separatorBuilder: (context, index) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final filter = _filters[index];
-          final isSelected = _selectedFilterIndex == index;
-
+          final filter = filters[index];
+          final isSelected = _activeFilter == filter;
           return FilterChip(
             label: Text(filter),
             selected: isSelected,
             onSelected: (selected) {
               setState(() {
-                _selectedFilterIndex = index;
                 _activeFilter = filter;
               });
             },
@@ -122,144 +157,46 @@ class _MenuPageState extends State<MenuPage> {
     );
   }
 
-  Widget _buildMenuSection(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 24, bottom: 16),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildMenuItems() {
-    // Sample menu items
-    final List<Map<String, dynamic>> menuItems = [
-      {
-        'id': '1',
-        'title': 'Roasted Salmon',
-        'price': 7.95,
-        'description': 'Roasted salmon with rice, vegetables and sauce.',
-        'allergens': 'Dairy, Gluten',
-        'nutrition': '450kcal, 38g protein, 45g fat',
-        'image': 'assets/images/Food1.jpg',
-        'tags': ['High Protein'],
-      },
-      {
-        'id': '2',
-        'title': 'Grilled Chicken',
-        'price': 7.95,
-        'description': 'Grilled chicken with seasonal vegetables and special sauce.',
-        'allergens': 'Dairy',
-        'nutrition': '380kcal, 42g protein, 22g fat',
-        'image': 'assets/images/Food1.jpg',
-        'tags': ['Low Carb', 'High Protein'],
-      },
-      {
-        'id': '3',
-        'title': 'Vegetable Stir Fry',
-        'price': 6.95,
-        'description': 'Fresh vegetables stir-fried with tofu and special sauce.',
-        'allergens': 'Soy',
-        'nutrition': '320kcal, 18g protein, 14g fat',
-        'image': 'assets/images/Food1.jpg',
-        'tags': ['Vegan', 'Low Carb'],
-      },
-      {
-        'id': '4',
-        'title': 'Quinoa Bowl',
-        'price': 8.95,
-        'description': 'Quinoa with roasted vegetables, avocado, and tahini dressing.',
-        'allergens': 'Sesame',
-        'nutrition': '420kcal, 15g protein, 22g fat',
-        'image': 'assets/images/Food1.jpg',
-        'tags': ['Vegan'],
-      },
-    ];
-
-    // Filter items based on selected filter
-    final filteredItems = _activeFilter == 'All'
-        ? menuItems
-        : menuItems.where((item) => item['tags'].contains(_activeFilter))
-        .toList();
-
-    return filteredItems.map((item) => _buildMenuItem(item)).toList();
-  }
-
-  Widget _buildMenuItem(Map<String, dynamic> item) {
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-
+  Widget _buildMenuItem(MenuItem item, CartProvider cartProvider) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      height: 130,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Food Image with Add/Counter button
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.asset(
-                  item['image'],
-                  width: 130,
-                  height: 130,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              Positioned(
-                bottom: 8,
-                right: 8,
-                child: AnimatedItemCounter(
-                  productId: item['id'],
-                  onAdd: () {
-                    cartProvider.addItem(
-                      productId: item['id'],
-                      title: item['title'],
-                      price: item['price'],
-                      image: item['image'],
-                      description: item['description'],
-                      allergens: item['allergens'],
-                      nutritionInfo: item['nutrition'],
-                    );
-
-                    // Show a snackbar only on the first add
-                    if (cartProvider.getItemQuantity(item['id']) == 1) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${item['title']} added to cart'),
-                          duration: const Duration(seconds: 1),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
-                  },
-                  onRemove: () {
-                    cartProvider.decrementItem(item['id']);
-                  },
-                ),
-              ),
-            ],
+          // Food image
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: (item.imageUrl.isNotEmpty)
+                ? Image.network(
+              item.imageUrl,
+              width: 130,
+              height: 130,
+              fit: BoxFit.cover,
+            )
+                : Image.asset(
+              'assets/images/placeholder.png', // Ensure this asset exists
+              width: 130,
+              height: 130,
+              fit: BoxFit.cover,
+            ),
           ),
           const SizedBox(width: 16),
-
-          // Text info
+          // Text information for the menu item
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item['title'],
+                  item.name,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '\$${item['price'].toStringAsFixed(2)}',
+                  '\$${item.price.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -268,7 +205,7 @@ class _MenuPageState extends State<MenuPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  item['description'],
+                  item.description,
                   style: const TextStyle(
                     fontSize: 12,
                     color: Colors.black54,
@@ -276,16 +213,17 @@ class _MenuPageState extends State<MenuPage> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                const Spacer(),
                 Row(
                   children: [
-                    _buildInfoChip('Allergens: ${item['allergens']}'),
+                    Flexible(
+                      child: _buildInfoChip(
+                          'Allergens: ${item.allergens.join(', ')}'),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Nutritional info: ${item['nutrition']}',
+                  'Nutritional info: ${item.nutrition.entries.map((e) => '${e.key}: ${e.value}').join(', ')}',
                   style: const TextStyle(
                     fontSize: 10,
                     color: Colors.black45,
@@ -295,6 +233,35 @@ class _MenuPageState extends State<MenuPage> {
                 ),
               ],
             ),
+          ),
+          // Animated counter widget for adding/removing items
+          AnimatedItemCounter(
+            productId: item.name, // Consider using a unique identifier if available
+            onAdd: () {
+              cartProvider.addItem(
+                productId: item.name,
+                title: item.name,
+                price: item.price.toDouble(),
+                image: item.imageUrl,
+                description: item.description,
+                allergens: item.allergens.join(', '),
+                nutritionInfo: item.nutrition.entries
+                    .map((e) => '${e.key}: ${e.value}')
+                    .join(', '),
+              );
+              if (cartProvider.getItemQuantity(item.name) == 1) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${item.name} added to cart'),
+                    duration: const Duration(seconds: 1),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            onRemove: () {
+              cartProvider.decrementItem(item.name);
+            },
           ),
         ],
       ),
@@ -310,39 +277,14 @@ class _MenuPageState extends State<MenuPage> {
       ),
       child: Text(
         text,
-        style: TextStyle(
-          fontSize: 10,
-          color: Colors.grey[800],
-        ),
+        style: TextStyle(fontSize: 10, color: Colors.grey[800]),
       ),
     );
   }
 
-  Widget _buildQuantityButton(
-      {required IconData icon, required VoidCallback onPressed}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: InkWell(
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: Icon(
-            icon,
-            color: Colors.white,
-            size: 16,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTrustTheChefCard() {
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+  // Promotional banner: "Trust the Chef" card.
+  Widget _buildTrustTheChefCard(CartProvider cartProvider) {
     const chefSpecialId = 'chef-special';
-
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -366,8 +308,7 @@ class _MenuPageState extends State<MenuPage> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
@@ -405,8 +346,7 @@ class _MenuPageState extends State<MenuPage> {
                       backgroundColor: Colors.white,
                       foregroundColor: AppColors.secondary,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -464,3 +404,91 @@ class _MenuPageState extends State<MenuPage> {
     );
   }
 }
+
+// Definition of CartBadge widget.
+class CartBadge extends StatelessWidget {
+  final Widget child;
+  final String value;
+  final Color? color;
+
+  const CartBadge({
+    Key? key,
+    required this.child,
+    required this.value,
+    this.color,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        child,
+        if (value != '0')
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: color ?? Colors.red,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              child: Text(
+                value,
+                style: const TextStyle(color: Colors.white, fontSize: 10),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// Sample AnimatedItemCounter widget.
+// class AnimatedItemCounter extends StatelessWidget {
+//   final String productId;
+//   final VoidCallback onAdd;
+//   final VoidCallback onRemove;
+//
+//   const AnimatedItemCounter({
+//     Key? key,
+//     required this.productId,
+//     required this.onAdd,
+//     required this.onRemove,
+//   }) : super(key: key);
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     final cartProvider = Provider.of<CartProvider>(context);
+//     final quantity = cartProvider.getItemQuantity(productId);
+//
+//     return Container(
+//       decoration: BoxDecoration(
+//         color: AppColors.primary,
+//         borderRadius: BorderRadius.circular(4),
+//       ),
+//       child: Row(
+//         mainAxisSize: MainAxisSize.min,
+//         children: [
+//           IconButton(
+//             padding: const EdgeInsets.all(4),
+//             icon: const Icon(Icons.remove, size: 16, color: Colors.white),
+//             onPressed: onRemove,
+//           ),
+//           Text(
+//             '$quantity',
+//             style: const TextStyle(color: Colors.white, fontSize: 12),
+//           ),
+//           IconButton(
+//             padding: const EdgeInsets.all(4),
+//             icon: const Icon(Icons.add, size: 16, color: Colors.white),
+//             onPressed: onAdd,
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
