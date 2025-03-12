@@ -7,6 +7,10 @@ import 'menu_page.dart';
 import 'package:built_better_app/components/navbar.dart';
 import '../services/restaurant_service.dart';
 import '../models/restaurant.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../services/cart_services.dart'; // Import your helper function
+
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -23,6 +27,22 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     restaurantFuture = fetchRestaurantData();
+    _initializeUserData();
+  }
+
+  void _initializeUserData() async {
+    User? currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      print(currentUser);
+      print('HELLO');
+      // User is logged in. Use user.uid to query cart data.
+    }
+    final storage = FlutterSecureStorage();
+    final storedUserId = await storage.read(key: 'userId');
+    if (storedUserId != null) {
+      Provider.of<CartProvider>(context, listen: false)
+          .loadCartItems(storedUserId);
+    }
   }
 
   @override
@@ -32,6 +52,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         elevation: 0,
         backgroundColor: Colors.white,
         toolbarHeight: 60,
@@ -108,11 +129,13 @@ class _HomePageState extends State<HomePage> {
                     ListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: restaurant.menu.length > 3 ? 3 : restaurant.menu.length,
+                      itemCount: restaurant.menu.length > 3
+                          ? 3
+                          : restaurant.menu.length,
                       itemBuilder: (context, index) {
                         final item = restaurant.menu[index];
                         return _buildMenuItem(
-                          id: '$index', // Replace with a unique identifier if available
+                          id: '$index', // Replace with a unique identifier if available.
                           title: item.name,
                           price: item.price.toDouble(),
                           description: item.description,
@@ -124,7 +147,6 @@ class _HomePageState extends State<HomePage> {
                         );
                       },
                     ),
-
                   ],
                 ),
               );
@@ -195,7 +217,8 @@ class _HomePageState extends State<HomePage> {
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black87,
                         elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                         ),
@@ -262,7 +285,19 @@ class _HomePageState extends State<HomePage> {
                 right: 8,
                 child: AnimatedItemCounter(
                   productId: id,
-                  onAdd: () {
+                  onAdd: () async {
+                    // Call the backend first to add the cart item and get the document id.
+                    final storage = FlutterSecureStorage();
+                    final storedUserId = await storage.read(key: 'userId');
+                    final documentId = await sendCartItemToServer(
+                      userId: storedUserId!,
+                      restaurantId: 'bbm', // Supply the appropriate restaurant id.
+                      itemId: id,
+                      quantity: 1,
+                      priceSnapshot: price,
+                      customization: {}, // Customize as needed.
+                    );
+                    // Then, add the item to the cart using the returned document id.
                     cartProvider.addItem(
                       productId: id,
                       title: title,
@@ -271,6 +306,7 @@ class _HomePageState extends State<HomePage> {
                       description: description,
                       allergens: allergens,
                       nutritionInfo: nutrition,
+                      docId: documentId,
                     );
                     if (cartProvider.getItemQuantity(id) == 1) {
                       ScaffoldMessenger.of(context).showSnackBar(

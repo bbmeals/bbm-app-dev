@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "889463869810",
+    "firebase_url": "https://bbm-db-dev-default-rtdb.firebaseio.com",
+    "project_id": "bbm-db-dev",
+    "storage_bucket": "bbm-db-dev.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:889463869810:android:aeeff2d6555fc66e4b0deb",
+        "android_client_info": {
+          "package_name": "com.company.bbm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC29QXZDOgpVWDr7gfo8_a1xLPYLI_7TQE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:889463869810:android:987a4b1e09a743ec4b0deb",
+        "android_client_info": {
+          "package_name": "com.example.bbm_apple_sync"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC29QXZDOgpVWDr7gfo8_a1xLPYLI_7TQE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:889463869810:android:164cca8f1e7ad4654b0deb",
+        "android_client_info": {
+          "package_name": "com.example.built_better_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC29QXZDOgpVWDr7gfo8_a1xLPYLI_7TQE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

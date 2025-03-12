@@ -40,6 +40,7 @@ class MenuItem {
   final String name;
   final String description;
   final String category;
+  final String id;
 
   MenuItem({
     required this.availability,
@@ -53,6 +54,7 @@ class MenuItem {
     required this.name,
     required this.description,
     required this.category,
+    required this.id,
   });
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
@@ -60,23 +62,29 @@ class MenuItem {
     bool parseAvailability(Map<String, dynamic> data, String key) {
       if (data.containsKey(key)) {
         final value = data[key];
-        if (value.containsKey('booleanValue')) {
+        if (value is Map && value.containsKey('booleanValue')) {
           return value['booleanValue'];
-        } else if (value.containsKey('stringValue')) {
+        } else if (value is Map && value.containsKey('stringValue')) {
           return value['stringValue'].toLowerCase() == 'true';
         }
       }
       return false;
     }
 
-    // Helper for image url (different key names in your JSON)
+    // Helper for image URL (handling different key names in your JSON)
     String parseImageUrl(Map<String, dynamic> data) {
       if (data.containsKey("image_url")) {
-        return data["image_url"]["stringValue"] ?? "";
+        return (data["image_url"] is String)
+            ? data["image_url"]
+            : data["image_url"]["stringValue"] ?? "";
       } else if (data.containsKey("Image _ url")) {
-        return data["Image _ url"]["stringValue"] ?? "";
+        return (data["Image _ url"] is String)
+            ? data["Image _ url"]
+            : data["Image _ url"]["stringValue"] ?? "";
       } else if (data.containsKey("Image _ url\"")) {
-        return data["Image _ url\""]["stringValue"] ?? "";
+        return (data["Image _ url\""] is String)
+            ? data["Image _ url\""]
+            : data["Image _ url\""]["stringValue"] ?? "";
       }
       return "";
     }
@@ -84,18 +92,28 @@ class MenuItem {
     // Price might be under different keys.
     int parsePrice(Map<String, dynamic> data) {
       if (data.containsKey("price")) {
-        return int.tryParse(data["price"]["integerValue"].toString()) ?? 0;
+        return int.tryParse(
+            (data["price"]["integerValue"] ?? "").toString()) ??
+            0;
       } else if (data.containsKey("Price")) {
-        return int.tryParse(data["Price"]["integerValue"].toString()) ?? 0;
+        return int.tryParse(
+            (data["Price"]["integerValue"] ?? "").toString()) ??
+            0;
       }
       return 0;
     }
 
-    // Similar helpers can be built for Name, Description, Category, etc.
+    // Helper to extract a string from a list of possible keys.
+    // This now handles both a Map with "stringValue" and a raw String.
     String parseString(Map<String, dynamic> data, List<String> keys) {
       for (final key in keys) {
         if (data.containsKey(key)) {
-          return data[key]["stringValue"] ?? "";
+          final value = data[key];
+          if (value is String) {
+            return value;
+          } else if (value is Map && value.containsKey("stringValue")) {
+            return value["stringValue"] ?? "";
+          }
         }
       }
       return "";
@@ -146,10 +164,12 @@ class MenuItem {
     // For calories (which might be a number or string).
     int parseCalories(Map<String, dynamic> data) {
       if (data.containsKey("calories")) {
-        return int.tryParse(data["calories"]["integerValue"].toString()) ?? 0;
+        return int.tryParse(
+            data["calories"]["integerValue"].toString()) ??
+            0;
       } else if (data.containsKey("Calories")) {
         return int.tryParse(
-            data["Calories"]["integerValue"]?.toString() ?? "0") ??
+            (data["Calories"]["integerValue"] ?? "0").toString()) ??
             0;
       }
       return 0;
@@ -181,6 +201,9 @@ class MenuItem {
       name: parseString(json, ["name", "Name"]),
       description: parseString(json, ["description", "Description"]),
       category: parseString(json, ["category", "Category"]),
+      id: parseString(json, ["id"]),
     );
   }
 }
+
+

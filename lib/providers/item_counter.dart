@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
-import '../theme/app_theme.dart';
 
 class AnimatedItemCounter extends StatefulWidget {
   final String productId;
@@ -19,7 +18,8 @@ class AnimatedItemCounter extends StatefulWidget {
   State<AnimatedItemCounter> createState() => _AnimatedItemCounterState();
 }
 
-class _AnimatedItemCounterState extends State<AnimatedItemCounter> with SingleTickerProviderStateMixin {
+class _AnimatedItemCounterState extends State<AnimatedItemCounter>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -68,141 +68,78 @@ class _AnimatedItemCounterState extends State<AnimatedItemCounter> with SingleTi
         final int quantity = cartProvider.getItemQuantity(widget.productId);
         final bool isInCart = quantity > 0;
 
-        return AnimatedContainer(
+        return AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
-          width: isInCart ? 85 : 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
+          switchInCurve: Curves.easeIn,
+          switchOutCurve: Curves.easeOut,
+          transitionBuilder: (child, animation) => ScaleTransition(
+            scale: animation,
+            child: child,
           ),
           child: isInCart
-              ? Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              GestureDetector(
-                onTapDown: _onTapDown,
-                onTapUp: (_) {
-                  _onTapUp(_);
-                  widget.onRemove?.call();
-                },
-                onTapCancel: _onTapCancel,
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) {
-                    return Transform.scale(
-                      scale: _scaleAnimation.value,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black12,
-                              blurRadius: 4,
-                              offset: Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.remove,
-                          size: 16,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    );
-                  },
+          // 1. If in cart, show a circle with the quantity.
+              ? GestureDetector(
+            key: const ValueKey('inCart'),
+            onTapDown: _onTapDown,
+            onTapUp: (_) {
+              _onTapUp(_);
+              widget.onAdd(); // tapping increments
+            },
+            onTapCancel: _onTapCancel,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  '$quantity',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
                 ),
               ),
-              Text(
-                '$quantity',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
-              ),
-              GestureDetector(
-                onTapDown: _onTapDown,
-                onTapUp: (_) {
-                  _onTapUp(_);
-                  widget.onAdd();
-                },
-                onTapCancel: _onTapCancel,
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) {
-                    return Transform.scale(
-                      scale: _scaleAnimation.value,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black12,
-                              blurRadius: 4,
-                              offset: Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.add,
-                          size: 16,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+            ),
           )
+          // 2. If not in cart, show a circle with a plus icon.
               : GestureDetector(
+            key: const ValueKey('notInCart'),
             onTapDown: _onTapDown,
             onTapUp: (_) {
               _onTapUp(_);
               widget.onAdd();
             },
             onTapCancel: _onTapCancel,
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 4,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.add,
-                        size: 20,
-                        color: Colors.black87,
-                      ),
-                    ),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
                   ),
-                );
-              },
+                ],
+              ),
+              child: const Icon(
+                Icons.add,
+                size: 20,
+                color: Colors.black87,
+              ),
             ),
           ),
         );
