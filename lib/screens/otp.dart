@@ -25,7 +25,6 @@ class _OtpScreenState extends State<OtpScreen> {
   // Verify OTP and call backend service to create user.
   void _verifyOtp() async {
     String smsCode = _otpController.text.trim();
-    print(smsCode);
 
     PhoneAuthCredential credential = PhoneAuthProvider.credential(
       verificationId: widget.verificationId,
@@ -33,27 +32,34 @@ class _OtpScreenState extends State<OtpScreen> {
     );
 
     try {
-      // Sign in with Firebase
       final userCredential =
       await FirebaseAuth.instance.signInWithCredential(credential);
       final user = userCredential.user;
-      if (user != null) {
-        // Call the backend service to create the user.
-        // Using the Firebase user's phone number.
-        final phone = user.phoneNumber ?? '';
-        final result = await createUserOnServer(phone: phone);
-        print("User created on server: $result");
+
+      if (user != null && user.phoneNumber != null) {
+        bool exists = await checkUserExists(user.phoneNumber!);
+
+        if (exists) {
+          Navigator.pushReplacementNamed(context, '/home');
+        } else {
+          Navigator.pushReplacementNamed(
+            context,
+            '/register',
+            arguments: {'phone': user.phoneNumber},
+          );
+        }
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('OTP Verified! Login successful.')),
-      );
-      Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('OTP Verification failed: ${e.message}')),
       );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('An error occurred: $e')),
+      );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

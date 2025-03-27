@@ -11,34 +11,28 @@ Future<Map<String, dynamic>> placeOrder({
   required double total,
   required String deliveryType,
   required String deliveryAddress,
+  String? note,
   DateTime? scheduledTime,
+  required restaurantId,
+  required payment_id
 }) async {
   final url = Uri.parse('$baseUrl/orders/$userId/place');
+  final now = DateTime.now().toUtc().toIso8601String();
 
-  List<Map<String, dynamic>> formattedItems = items.map((item) {
-    return {
-      "mapValue": {
-        "fields": item.map((key, value) {
-          return MapEntry(key, _convertToFirestoreFormat(value));
-        })
-      }
-    };
-  }).toList();
-
-  final now = DateTime.now().toUtc();
 
   final payload = {
-    "items": {
-      "arrayValue": {"values": formattedItems}
-    },
-    "delivery_type": {"stringValue": deliveryType},
-    "delivery_address": {"stringValue": deliveryAddress},
-    "total": {"integerValue": total.toInt()},
-    "userId": {"stringValue": userId},
-    "created_at": {"timestampValue": now.toIso8601String()},  // ✅ Correct format
-    "updated_at": {"timestampValue": now.toIso8601String()},  // ✅ Correct format
+    "items": items,
+    "delivery_type": deliveryType,
+    "delivery_address": deliveryAddress,
+    "total": total.toInt(),
+    "userId": userId,
+    "created_at": now,
+    "updated_at": now,
+    "note":note,
+    "restaurantId":restaurantId,
+    "payment_id":payment_id,
     if (scheduledTime != null)
-      "scheduled_time": {"timestampValue": scheduledTime.toIso8601String()},
+      "scheduled_time": scheduledTime.toIso8601String(),
   };
 
   final response = await http.post(
@@ -54,26 +48,22 @@ Future<Map<String, dynamic>> placeOrder({
   }
 }
 
-// Helper function to convert values to Firestore format
-Map<String, dynamic> _convertToFirestoreFormat(dynamic value) {
-  if (value is String) return {"stringValue": value};
-  if (value is int) return {"integerValue": value};
-  if (value is double) return {"doubleValue": value};
-  if (value is bool) return {"booleanValue": value};
-  if (value is DateTime) return {"timestampValue": value.toIso8601String()};
-  if (value is List) {
-    return {
-      "arrayValue": {
-        "values": value.map((v) => _convertToFirestoreFormat(v)).toList()
-      }
-    };
+Future<List<dynamic>> getUserOrders(String userId) async {
+  final url = Uri.parse('$baseUrl/orders/$userId');
+
+  final response = await http.get(
+    url,
+    headers: {'Content-Type': 'application/json'},
+  );
+
+
+  if (response.statusCode == 200) {
+    return jsonDecode(response.body) as List<dynamic>;
+  } else {
+    throw Exception('Failed to fetch orders: ${response.body}');
   }
-  if (value is Map<String, dynamic>) {
-    return {
-      "mapValue": {
-        "fields": value.map((k, v) => MapEntry(k, _convertToFirestoreFormat(v)))
-      }
-    };
-  }
-  return {}; // Default case
 }
+
+
+
+

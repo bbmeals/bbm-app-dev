@@ -179,6 +179,8 @@ Future<void> showItemDetailsModal({
                                   .map((e) => '${e.key}: ${e.value}')
                                   .join(', '),
                               docId: documentId,
+                              menuItemId: item.id,
+                              category: item.category,
                             );
 
                             Navigator.pop(context);

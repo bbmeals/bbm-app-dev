@@ -1,10 +1,16 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart'; // For iOS-style date picker.
+import 'package:intl/intl.dart'; // For date formatting.
 import 'package:provider/provider.dart';
 import 'package:built_better_app/providers/cart_provider.dart';
 import 'package:built_better_app/theme/app_theme.dart';
 import '../services/order_service.dart';
+import '../services/user_service.dart'; // Contains your API calls.
 import 'order_success.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+final storage = FlutterSecureStorage();
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({Key? key}) : super(key: key);
@@ -18,16 +24,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String _promoCode = '';
   bool _promoApplied = false;
   double _promoDiscount = 0;
-  // Start with empty strings so that the user enters these values.
+
+  // Address display variables.
   String _address = '';
   String _cityState = '';
-  String _phone = '';
+  String _selectedAddressLabel = ''; // Stores selected label.
 
-  // Validate phone number: expects +1 followed by 10 digits (optionally with a space).
-  bool _isValidPhone(String phone) {
-    final RegExp regex = RegExp(r'^\+1\s?\d{10}$');
-    return regex.hasMatch(phone);
-  }
+  // New state variables for scheduled delivery.
+  DateTime? _selectedScheduledTime;
+  DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
 
   @override
   Widget build(BuildContext context) {
@@ -60,16 +66,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   // Address section.
                   _buildInfoSection(
                     icon: Icons.location_on_outlined,
-                    title: _address.isEmpty ? 'Enter street address' : _address,
-                    subtitle: _cityState.isEmpty ? 'Enter city, state' : _cityState,
+                    title: 'Select Address',
+                    subtitle: 'Tap to choose or add address',
                     onTap: _editAddress,
-                  ),
-                  _buildDivider(),
-                  // Phone section.
-                  _buildInfoSection(
-                    icon: Icons.phone_outlined,
-                    title: _phone.isEmpty ? 'Enter phone number' : _phone,
-                    onTap: _editPhone,
                   ),
                   _buildDivider(),
                   // Delivery options.
@@ -78,16 +77,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     child: _buildDeliveryOptions(),
                   ),
                   _buildDivider(),
-                  // Order summary section including order items and promo code.
+                  // Order summary section.
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Order Summary',
-                          style: AppTextStyles.headline2,
-                        ),
+                        Text('Order Summary', style: AppTextStyles.headline2),
                         const SizedBox(height: 16),
                         _buildOrderItemsList(cartProvider),
                         const SizedBox(height: 16),
@@ -155,51 +151,44 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              // Disable if cart is empty. Also validate that the address and phone have been entered.
               onPressed: cartProvider.items.isEmpty
                   ? null
                   : () async {
-                if (_address.trim().isEmpty ||
-                    _cityState.trim().isEmpty ||
-                    _phone.trim().isEmpty ||
-                    !_isValidPhone(_phone)) {
+                // Ensure an address is selected.
+                if (_address.trim().isEmpty || _cityState.trim().isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Please enter a valid address and phone number.'),
+                      content: Text('Please select or add a valid address.'),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
                   return;
                 }
-
-                // Show a loading indicator.
+                // Show loading indicator.
                 showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (context) => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  builder: (context) =>
+                  const Center(child: CircularProgressIndicator()),
                 );
 
                 try {
-                  // Retrieve the stored user ID from secure storage.
-                  final storage = FlutterSecureStorage();
                   final storedUserId = await storage.read(key: 'userId');
-
                   if (storedUserId == null) {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('User ID not found, please log in again.'),
-                      ),
+                          content: Text('User ID not found, please log in again.')),
                     );
                     return;
                   }
 
-                  // Map each cart item into a map.
-                  final orderItems = cartProvider.items.values.map((item) {
+                  final orderItems =
+                  cartProvider.items.entries.map((entry) {
+                    final item = entry.value;
                     return {
-                      'itemId': item.id,
+                      'itemId': item.menuItemId,
+                      'itemName': item.title,
                       'quantity': item.quantity,
                       'price': item.price,
                       'customization': parseCustomization(item.description) ?? '',
@@ -207,23 +196,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   }).toList();
 
                   final orderResponse = await placeOrder(
-                    userId: storedUserId, // Use the retrieved user ID.
+                    userId: storedUserId,
                     items: orderItems,
                     total: total,
                     deliveryType: _selectedDeliveryOption ?? 'standard',
                     deliveryAddress: '$_address, $_cityState',
-                    scheduledTime: _selectedDeliveryOption == 'schedule'
-                        ? DateTime.now() // Replace with a scheduled time if applicable.
-                        : null,
+                    note: cartProvider.orderNote,
+                    restaurantId: 'bbm',
+                    payment_id: "",
+                    scheduledTime: _selectedDeliveryOption == 'standard'
+                        ? DateTime.now().add(const Duration(minutes: 30))
+                        : _selectedScheduledTime,
                   );
 
-                  // Dismiss the loading indicator.
-                  Navigator.pop(context);
-
-                  // Clear the cart.
+                  Navigator.pop(context); // Dismiss loading.
                   cartProvider.clear();
 
-                  // Navigate to the order success page.
                   Navigator.pushReplacement(
                     context,
                     MaterialPageRoute(
@@ -240,10 +228,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               },
               child: const Text(
                 'Place order',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -252,8 +237,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  Widget _buildPriceRow(String label, String price,
-      {bool showInfo = false, String? infoMessage, Color? textColor, bool isTotal = false}) {
+  // Price row widget.
+  Widget _buildPriceRow(
+      String label,
+      String price, {
+        bool showInfo = false,
+        String? infoMessage,
+        Color? textColor,
+        bool isTotal = false,
+      }) {
     return Row(
       children: [
         Text(
@@ -282,9 +274,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           style: isTotal
               ? AppTextStyles.headline2.copyWith(color: AppColors.primary)
               : AppTextStyles.body1.copyWith(
-            color: textColor,
-            fontWeight: FontWeight.w600,
-          ),
+              color: textColor, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -294,6 +284,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return Divider(height: 1, thickness: 1, color: AppColors.divider);
   }
 
+  // Info section widget for displaying selected address details.
   Widget _buildInfoSection({
     required IconData icon,
     required String title,
@@ -304,7 +295,29 @@ class _CheckoutPageState extends State<CheckoutPage> {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: _selectedAddressLabel.isNotEmpty || _address.isNotEmpty
+            ? Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_selectedAddressLabel.isNotEmpty &&
+                _selectedAddressLabel.toLowerCase() != 'other')
+              Row(
+                children: [
+                  Icon(_getAddressIcon(_selectedAddressLabel),
+                      color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    _selectedAddressLabel,
+                    style: AppTextStyles.subtitle1
+                        .copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            const SizedBox(height: 4),
+            Text('$_address, $_cityState', style: AppTextStyles.body2),
+          ],
+        )
+            : Row(
           children: [
             Icon(icon, color: Colors.black87),
             const SizedBox(width: 16),
@@ -327,6 +340,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  // Delivery options widget.
   Widget _buildDeliveryOptions() {
     return Column(
       children: [
@@ -359,14 +373,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
             decoration: BoxDecoration(
               color: Colors.grey[100],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primary.withOpacity(0.5)),
+              border:
+              Border.all(color: AppColors.primary.withOpacity(0.5)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Subscription Delivery',
-                  style: AppTypography.titleMedium.copyWith(color: AppColors.primary),
+                  style: AppTypography.titleMedium
+                      .copyWith(color: AppColors.secondary),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -389,6 +405,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  // Delivery option widget.
   Widget _buildDeliveryOption({
     required String title,
     required String subtitle,
@@ -433,7 +450,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     title,
                     style: AppTypography.titleSmall.copyWith(
                       color: isSelected ? AppColors.primary : AppColors.text,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight:
+                      isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
                 ),
@@ -457,10 +475,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.primary : Colors.white,
+        color: isSelected ? AppColors.secondary : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isSelected ? AppColors.primary : Colors.grey[300]!,
+          color: isSelected ? AppColors.secondary : Colors.grey[300]!,
         ),
       ),
       child: Text(
@@ -473,7 +491,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  // Updated time picker dialog.
+  // Now shows a horizontal day picture selector for the next 7 days and an iOS-like time picker.
   void _showTimePickerDialog() {
+    // Initialize default date and time if not already set.
+    _selectedDate ??= DateTime.now();
+    _selectedTime ??= TimeOfDay.now();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -485,56 +509,90 @@ class _CheckoutPageState extends State<CheckoutPage> {
           padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Select Delivery Time', style: AppTypography.headlineMedium),
               const SizedBox(height: 20),
-              // Date selection.
-              Text('Date', style: AppTypography.titleMedium),
-              const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(5, (index) {
-                    final date = DateTime.now().add(Duration(days: index));
-                    final isToday = index == 0;
-                    final isTomorrow = index == 1;
-                    String dayText;
-                    if (isToday) {
-                      dayText = 'Today';
-                    } else if (isTomorrow) {
-                      dayText = 'Tomorrow';
-                    } else {
-                      dayText = '${date.day}/${date.month}';
-                    }
-                    return Container(
-                      margin: const EdgeInsets.only(right: 12),
-                      child: _buildDateOption(
-                        dayText,
-                        isSelected: index == 0,
-                      ),
-                    );
-                  }),
+              // Horizontal day selector (from today for 7 days).
+              SizedBox(
+                height: 100,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+
+                  child: Row(
+
+                    children: List.generate(7, (index) {
+                      final date = DateTime.now().add(Duration(days: index));
+                      final dayAbbr = DateFormat('EEE').format(date);
+                      bool isSelected = _selectedDate != null &&
+                          date.year == _selectedDate!.year &&
+                          date.month == _selectedDate!.month &&
+                          date.day == _selectedDate!.day;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedDate = date;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: isSelected ? AppColors.primary : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                CircleAvatar(
+                                  radius: 24,
+                                  backgroundColor: Colors.white,
+                                  child: Text(
+                                    dayAbbr,
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white : AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  DateFormat('d').format(date),
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
                 ),
               ),
-              const SizedBox(height: 24),
-              // Time selection.
-              Text('Time', style: AppTypography.titleMedium),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _buildTimeOption('12:00 PM'),
-                  _buildTimeOption('12:30 PM'),
-                  _buildTimeOption('1:00 PM', isSelected: true),
-                  _buildTimeOption('1:30 PM'),
-                  _buildTimeOption('2:00 PM'),
-                  _buildTimeOption('2:30 PM'),
-                ],
+              const SizedBox(height: 20),
+              // Cupertino (iOS-like) time picker.
+              Container(
+                height: 200,
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: DateTime(
+                    0,
+                    1,
+                    1,
+                    _selectedTime?.hour ?? TimeOfDay.now().hour,
+                    _selectedTime?.minute ?? TimeOfDay.now().minute,
+                  ),
+                  use24hFormat: false,
+                  onDateTimeChanged: (DateTime newTime) {
+                    setState(() {
+                      _selectedTime = TimeOfDay.fromDateTime(newTime);
+                    });
+                  },
+                ),
               ),
               const SizedBox(height: 30),
-              // Confirm button.
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -546,14 +604,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ),
                   onPressed: () {
+                    if (_selectedDate != null && _selectedTime != null) {
+                      final combinedDateTime = DateTime(
+                        _selectedDate!.year,
+                        _selectedDate!.month,
+                        _selectedDate!.day,
+                        _selectedTime!.hour,
+                        _selectedTime!.minute,
+                      );
+                      setState(() {
+                        _selectedScheduledTime = combinedDateTime;
+                      });
+                    }
                     Navigator.pop(context);
                   },
-                  child: Text(
-                    'Confirm',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
+                  child: Text('Confirm', style: AppTypography.labelLarge.copyWith(color: Colors.white)),
                 ),
               ),
               const SizedBox(height: 20),
@@ -561,44 +626,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildDateOption(String text, {bool isSelected = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isSelected ? AppColors.primary : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected ? AppColors.primary : Colors.grey[300]!,
-        ),
-      ),
-      child: Text(
-        text,
-        style: AppTypography.labelMedium.copyWith(
-          color: isSelected ? Colors.white : AppColors.text,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTimeOption(String time, {bool isSelected = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isSelected ? AppColors.primary : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected ? AppColors.primary : Colors.grey[300]!,
-        ),
-      ),
-      child: Text(
-        time,
-        style: AppTypography.labelMedium.copyWith(
-          color: isSelected ? Colors.white : AppColors.text,
-        ),
-      ),
     );
   }
 
@@ -618,10 +645,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           children: [
             const Icon(Icons.shopping_bag_outlined),
             const SizedBox(width: 16),
-            Text(
-              '${cartProvider.itemCount} items',
-              style: AppTextStyles.subtitle1,
-            ),
+            Text('${cartProvider.itemCount} items', style: AppTextStyles.subtitle1),
             const Spacer(),
             const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
           ],
@@ -673,18 +697,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '1 promotion applied',
-                  style: AppTextStyles.subtitle1.copyWith(
-                    color: Colors.green[700],
-                  ),
-                ),
-                Text(
-                  '\$${_promoDiscount.toStringAsFixed(2)} off',
-                  style: AppTextStyles.body2.copyWith(
-                    color: Colors.green[700],
-                  ),
-                ),
+                Text('1 promotion applied',
+                    style: AppTextStyles.subtitle1.copyWith(color: Colors.green[700])),
+                Text('\$${_promoDiscount.toStringAsFixed(2)} off',
+                    style: AppTextStyles.body2.copyWith(color: Colors.green[700])),
               ],
             ),
           ),
@@ -703,87 +719,184 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  // Called when user taps the address section.
   void _editAddress() {
-    final TextEditingController streetController = TextEditingController(text: _address);
-    final TextEditingController cityStateController = TextEditingController(text: _cityState);
+    _showAddressSelectionDialog();
+  }
+
+  // Displays the bottom sheet to select or add addresses.
+  void _showAddressSelectionDialog() async {
+    final storedUserId = await storage.read(key: 'userId');
+    if (storedUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User not logged in.')),
+      );
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      shape:
+      const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 16,
-            right: 16,
-            top: 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Edit Address', style: AppTextStyles.headline2),
-              const SizedBox(height: 16),
-              TextField(
-                controller: streetController,
-                decoration: const InputDecoration(
-                  labelText: 'Street address',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  _address = value;
-                },
+        return FutureBuilder<Map<String, dynamic>?>(
+          future: fetchAddressesFromServer(storedUserId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Error fetching addresses: ${snapshot.error}'),
+              );
+            }
+
+            final addressesMap = (snapshot.data?['addresses'] ?? {}) as Map<String, dynamic>;
+            List<Map<String, dynamic>> addressList = [];
+
+            addressesMap.forEach((key, value) {
+              final Map<String, dynamic> addr = Map<String, dynamic>.from(value);
+              String label = '';
+              if (key.toLowerCase() == 'home') {
+                label = 'Home';
+              } else if (key.toLowerCase() == 'work') {
+                label = 'Work';
+              } else {
+                label = (addr['type'] as String?)?.trim() ?? '';
+                if (label.isEmpty) {
+                  label = 'other';
+                }
+              }
+              addr['label'] = label;
+              addressList.add(addr);
+            });
+
+            // Sort addresses so Home and Work come first.
+            addressList = _sortAddresses(addressList);
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8,
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: cityStateController,
-                decoration: const InputDecoration(
-                  labelText: 'City, State',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  _cityState = value;
-                },
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _address = streetController.text;
-                      _cityState = cityStateController.text;
-                    });
-                    Navigator.of(context).pop();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text(
+                    'Select Address',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  child: const Text('Save Address'),
-                ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    leading: const Icon(Icons.add),
+                    title: const Text('Add an address'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _showAddNewAddressDialog();
+                    },
+                  ),
+                  const Divider(),
+                  Expanded(
+                    child: addressList.isEmpty
+                        ? const Center(child: Text('No saved addresses.'))
+                        : ListView.separated(
+                      itemCount: addressList.length,
+                      separatorBuilder: (_, __) => const Divider(),
+                      itemBuilder: (context, index) {
+                        final addr = addressList[index];
+                        final String label = addr['label'] ?? '';
+                        final String apt = addr['apt'] ?? '';
+                        final String street = addr['street'] ?? '';
+                        final String city = addr['city'] ?? '';
+                        final String pin = addr['pin'] ?? '';
+
+                        final addressLine = (apt.isNotEmpty ? '$apt, ' : '') + street;
+                        final cityState = '$city, $pin';
+
+                        return ListTile(
+                          leading: (label.toLowerCase() != 'other' && label.isNotEmpty)
+                              ? Icon(_getAddressIcon(label), color: AppColors.primary)
+                              : null,
+                          title: (label.toLowerCase() != 'other' && label.isNotEmpty)
+                              ? Text(label, style: AppTextStyles.subtitle1)
+                              : Text(addressLine, style: AppTextStyles.subtitle1),
+                          subtitle: (label.toLowerCase() != 'other' && label.isNotEmpty)
+                              ? Text('$addressLine\n$cityState', style: AppTextStyles.body2)
+                              : Text(cityState, style: AppTextStyles.body2),
+                          isThreeLine: (label.toLowerCase() != 'other' && label.isNotEmpty),
+                          onTap: () {
+                            setState(() {
+                              _selectedAddressLabel = (label.toLowerCase() != 'other') ? label : '';
+                              _address = addressLine;
+                              _cityState = cityState;
+                            });
+                            Navigator.of(context).pop();
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 24),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
 
-  void _editPhone() {
-    final TextEditingController phoneController = TextEditingController(
-      text: _phone.startsWith('+1 ') ? _phone.substring(3) : _phone,
-    );
+  // Sort addresses so that Home and Work come first.
+  List<Map<String, dynamic>> _sortAddresses(List<Map<String, dynamic>> addresses) {
+    Map<String, dynamic>? home;
+    Map<String, dynamic>? work;
+    final others = <Map<String, dynamic>>[];
+
+    for (var addr in addresses) {
+      final label = (addr['label'] ?? '').toString().toLowerCase();
+      if (label == 'home') {
+        home = addr;
+      } else if (label == 'work') {
+        work = addr;
+      } else {
+        others.add(addr);
+      }
+    }
+
+    final sorted = <Map<String, dynamic>>[];
+    if (home != null) sorted.add(home);
+    if (work != null) sorted.add(work);
+    sorted.addAll(others);
+
+    return sorted;
+  }
+
+  // Helper function to return the appropriate icon based on the label.
+  IconData _getAddressIcon(String label) {
+    if (label.toLowerCase() == 'home') {
+      return Icons.home;
+    } else if (label.toLowerCase() == 'work') {
+      return Icons.work;
+    } else if (label.isNotEmpty) {
+      return Icons.location_on;
+    }
+    return Icons.location_on; // Default icon.
+  }
+
+  // Displays a bottom sheet with a form to add a new address.
+  void _showAddNewAddressDialog() {
+    final parentContext = context;
+    final TextEditingController aptController = TextEditingController();
+    final TextEditingController streetController = TextEditingController();
+    final TextEditingController cityController = TextEditingController();
+    final TextEditingController pinController = TextEditingController();
+    final TextEditingController labelController = TextEditingController();
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      shape:
+      const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (context) {
         return Padding(
           padding: EdgeInsets.only(
@@ -792,42 +905,117 @@ class _CheckoutPageState extends State<CheckoutPage> {
             right: 16,
             top: 16,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Edit Phone Number', style: AppTextStyles.headline2),
-              const SizedBox(height: 16),
-              TextField(
-                controller: phoneController,
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number',
-                  border: OutlineInputBorder(),
-                  prefixText: '+1 ',
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Add New Address',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                keyboardType: TextInputType.phone,
-                onChanged: (value) {
-                  _phone = '+1 $value';
-                },
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _phone = '+1 ${phoneController.text}';
-                    });
-                    Navigator.of(context).pop();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: labelController,
+                  decoration: const InputDecoration(
+                    labelText: 'Label (e.g. Home, Work) - optional',
+                    border: OutlineInputBorder(),
                   ),
-                  child: const Text('Save Phone Number'),
                 ),
-              ),
-              const SizedBox(height: 24),
-            ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: aptController,
+                  decoration: const InputDecoration(
+                    labelText: 'Apartment/Suite (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: streetController,
+                  decoration: const InputDecoration(
+                    labelText: 'Street Address *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: cityController,
+                  decoration: const InputDecoration(
+                    labelText: 'City *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pinController,
+                  decoration: const InputDecoration(
+                    labelText: 'PIN/Postal Code *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.secondary,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () async {
+                      String apt = aptController.text.trim();
+                      String street = streetController.text.trim();
+                      String city = cityController.text.trim();
+                      String pin = pinController.text.trim();
+                      final String label = labelController.text.trim();
+                      final String effectiveLabel = label.isEmpty ? "other" : label;
+
+                      if (street.isEmpty || city.isEmpty || pin.isEmpty) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                          const SnackBar(content: Text('Please fill in all required fields.')),
+                        );
+                        return;
+                      }
+
+                      final storedUserId = await storage.read(key: 'userId');
+                      if (storedUserId == null) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                          const SnackBar(content: Text('User not logged in.')),
+                        );
+                        return;
+                      }
+
+                      final result = await addAddressOnServer(
+                        userId: storedUserId,
+                        apt: apt.isNotEmpty ? apt : null,
+                        street: street,
+                        city: city,
+                        pin: pin,
+                        type: effectiveLabel,
+                      );
+
+                      if (result != null) {
+                        Navigator.of(context).pop();
+                        _showAddressSelectionDialog();
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                          const SnackBar(content: Text('Address added successfully.')),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                          const SnackBar(content: Text('Failed to add address.')),
+                        );
+                      }
+                    },
+                    child: const Text('Save Address'),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         );
       },
@@ -840,9 +1028,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      shape:
+      const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (context) {
         return Padding(
           padding: EdgeInsets.only(
@@ -872,7 +1059,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () {
-                        // Cancel: just dismiss the modal.
                         Navigator.of(context).pop();
                       },
                       style: ElevatedButton.styleFrom(
@@ -891,7 +1077,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           setState(() {
                             _promoCode = code;
                             _promoApplied = true;
-                            _promoDiscount = 3.00;
+                            _promoDiscount = 3.00; // Example discount.
                           });
                           Navigator.of(context).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -923,9 +1109,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      shape:
+      const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (context) {
         return Container(
           constraints: BoxConstraints(
@@ -943,15 +1128,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () {
-                      final orderId = 'ORDER${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
-                      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-                      cartProvider.clear();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => OrderSuccessPage(orderId: orderId),
-                        ),
-                      );
+                      Navigator.pop(context);
                     },
                   ),
                 ],
@@ -978,10 +1155,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             child: Center(
                               child: Text(
                                 '${index + 1}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                               ),
                             ),
                           ),

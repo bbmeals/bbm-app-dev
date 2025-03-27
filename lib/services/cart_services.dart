@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../models/cart_item.dart';
 
 
 Future<String> sendCartItemToServer({
@@ -11,16 +12,10 @@ Future<String> sendCartItemToServer({
   required double priceSnapshot,
   required Map<String, String> customization,
 }) async {
-  print('Sending cart item data with the following parameters:');
-  print('userId: $userId');
-  print('restaurantId: $restaurantId');
-  print('itemId: $itemId');
-  print('quantity: $quantity');
-  print('priceSnapshot: $priceSnapshot');
-  print('customization: $customization');
+
 
   final String baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:8080';
-  final url = Uri.parse('$baseUrl/users/$userId/cart');
+  final url = Uri.parse('$baseUrl/cart/$userId/cart');
 
   final payload = {
     'userId': userId,
@@ -56,14 +51,19 @@ Future<String> sendCartItemToServer({
 
 Future<List<dynamic>> getCartItemsFromServer(String userId) async {
   final String baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:8080';
+  final url = Uri.parse('$baseUrl/cart/$userId/cart');
 
-  final url = Uri.parse('$baseUrl/users/$userId/cart');
   try {
     final response = await http.get(url, headers: {'Content-Type': 'application/json'});
+
     if (response.statusCode == 200) {
-      // Decode the JSON response which is expected to be a list of cart items.
-      final data = jsonDecode(response.body);
+      // Expecting the response to be a JSON list of cart items
+      final List<dynamic> data = jsonDecode(response.body);
       print('Successfully fetched cart items');
+
+      // Convert each JSON object into a CartItem instance
+      // final cartItems = data.map((item) => CartItem.fromJson(item)).toList();
+      // return cartItems;
       return data;
     } else {
       print('Failed to fetch cart items: ${response.body}');
@@ -75,6 +75,7 @@ Future<List<dynamic>> getCartItemsFromServer(String userId) async {
   }
 }
 
+
 // Update Quantity
 Future<bool> updateCartItemQuantity({
   required String userId,
@@ -82,11 +83,12 @@ Future<bool> updateCartItemQuantity({
   required int quantity,
 }) async {
   final String baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:8080';
-  final url = Uri.parse('$baseUrl/users/$userId/cart/$cartItemId');
+  print(cartItemId);
+  final url = Uri.parse('$baseUrl/cart/$userId/cart/$cartItemId');
 
-  // If quantity is 0, indicate that the item should be removed
+  // If quantity is 0, we send 0 so the server can treat it as a removal request.
   final payload = {
-    "quantity": quantity <= 0 ? null : {"integerValue": quantity.toString()}
+    "quantity": quantity <= 0 ? 0 : quantity,
   };
 
   try {
@@ -110,4 +112,5 @@ Future<bool> updateCartItemQuantity({
     return false;
   }
 }
+
 

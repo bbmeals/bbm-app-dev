@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
+import '../providers/menu_provider.dart';
 import '../providers/item_counter.dart';
 import '../theme/app_theme.dart';
-import 'menu_page.dart';
 import 'package:built_better_app/components/navbar.dart';
-import '../services/restaurant_service.dart';
 import '../models/restaurant.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../services/cart_services.dart'; // Import your helper function
-
+import '../services/cart_services.dart';
+import '../providers/menu_item_details.dart'; // The shared modal customization logic
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -21,12 +20,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _currentNavIndex = 0;
-  late Future<Restaurant> restaurantFuture;
 
   @override
   void initState() {
     super.initState();
-    restaurantFuture = fetchRestaurantData();
     _initializeUserData();
   }
 
@@ -35,19 +32,24 @@ class _HomePageState extends State<HomePage> {
     if (currentUser != null) {
       print(currentUser);
       print('HELLO');
-      // User is logged in. Use user.uid to query cart data.
+      // User is logged in. Use currentUser.uid as needed.
     }
     final storage = FlutterSecureStorage();
     final storedUserId = await storage.read(key: 'userId');
     if (storedUserId != null) {
-      Provider.of<CartProvider>(context, listen: false)
-          .loadCartItems(storedUserId);
+      Provider.of<CartProvider>(context, listen: false).loadCartItems(storedUserId);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
+    final restaurantProvider = Provider.of<RestaurantProvider>(context);
+
+    // Access the restaurant data from the provider.
+    final Restaurant? restaurant = restaurantProvider.restaurant;
+    final bool isLoading = restaurantProvider.isLoading;
+    final String? error = restaurantProvider.error;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -84,76 +86,59 @@ class _HomePageState extends State<HomePage> {
         },
       ),
       body: SafeArea(
-        child: FutureBuilder<Restaurant>(
-          future: restaurantFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            } else if (snapshot.hasData) {
-              final restaurant = snapshot.data!;
-              return SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : error != null
+            ? Center(child: Text('Error: $error'))
+            : restaurant != null
+            ? SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeroBanner(),
+              _buildPromoCard(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildHeroBanner(),
-                    _buildPromoCard(),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                    const Text(
+                      'Our menu',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/menu');
+                      },
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Our menu',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/menu');
-                            },
-                            child: Row(
-                              children: const [
-                                Text('View all items'),
-                                SizedBox(width: 4),
-                                Icon(Icons.arrow_forward, size: 16),
-                              ],
-                            ),
-                          ),
+                        children: const [
+                          Text('View all items'),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_forward, size: 16),
                         ],
                       ),
                     ),
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: restaurant.menu.length > 3
-                          ? 3
-                          : restaurant.menu.length,
-                      itemBuilder: (context, index) {
-                        final item = restaurant.menu[index];
-                        return _buildMenuItem(
-                          id: '$index', // Replace with a unique identifier if available.
-                          title: item.name,
-                          price: item.price.toDouble(),
-                          description: item.description,
-                          allergens: item.allergens.join(', '),
-                          nutrition: item.nutrition.entries
-                              .map((e) => '${e.key}: ${e.value}')
-                              .join(', '),
-                          imageAsset: item.imageUrl,
-                        );
-                      },
-                    ),
                   ],
                 ),
-              );
-            }
-            return const SizedBox.shrink();
-          },
-        ),
+              ),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: restaurant.menu.length > 3
+                    ? 3
+                    : restaurant.menu.length,
+                itemBuilder: (context, index) {
+                  final item = restaurant.menu[index];
+                  return _buildMenuItem(item);
+                },
+              ),
+            ],
+          ),
+        )
+            : const SizedBox.shrink(),
       ),
     );
   }
@@ -252,15 +237,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildMenuItem({
-    required String id,
-    required String title,
-    required double price,
-    required String description,
-    required String allergens,
-    required String nutrition,
-    required String imageAsset,
-  }) {
+  Widget _buildMenuItem(MenuItem item) {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -268,13 +245,20 @@ class _HomePageState extends State<HomePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Food image and counter
+          // Food image and AnimatedItemCounter.
           Stack(
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  imageAsset,
+                child: (item.imageUrl.isNotEmpty)
+                    ? Image.network(
+                  item.imageUrl,
+                  width: 130,
+                  height: 130,
+                  fit: BoxFit.cover,
+                )
+                    : Image.asset(
+                  'assets/images/placeholder.png',
                   width: 130,
                   height: 130,
                   fit: BoxFit.cover,
@@ -284,71 +268,48 @@ class _HomePageState extends State<HomePage> {
                 bottom: 8,
                 right: 8,
                 child: AnimatedItemCounter(
-                  productId: id,
-                  onAdd: () async {
-                    // Call the backend first to add the cart item and get the document id.
-                    final storage = FlutterSecureStorage();
-                    final storedUserId = await storage.read(key: 'userId');
-                    final documentId = await sendCartItemToServer(
-                      userId: storedUserId!,
-                      restaurantId: 'bbm', // Supply the appropriate restaurant id.
-                      itemId: id,
-                      quantity: 1,
-                      priceSnapshot: price,
-                      customization: {}, // Customize as needed.
+                  productId: item.name,
+                  onAdd: () {
+                    // Instead of directly adding, open the modal with customization.
+                    MenuItemDetails.show(
+                      context: context,
+                      item: item,
+                      cartProvider: cartProvider,
                     );
-                    // Then, add the item to the cart using the returned document id.
-                    cartProvider.addItem(
-                      productId: id,
-                      title: title,
-                      price: price,
-                      image: imageAsset,
-                      description: description,
-                      allergens: allergens,
-                      nutritionInfo: nutrition,
-                      docId: documentId,
-                    );
-                    if (cartProvider.getItemQuantity(id) == 1) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('$title added to cart'),
-                          duration: const Duration(seconds: 1),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
                   },
                   onRemove: () {
-                    cartProvider.decrementItem(id);
+                    cartProvider.decrementItem(item.name);
                   },
                 ),
               ),
             ],
           ),
           const SizedBox(width: 16),
-          // Text information for the menu item
+          // Food item information.
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  item.name,
                   style: const TextStyle(
-                    fontSize: 10,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '\$${price.toStringAsFixed(2)}',
+                  '\$${item.price.toStringAsFixed(2)}',
                   style: const TextStyle(
-                    fontSize: 10,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: AppColors.primary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  description,
+                  item.description,
                   style: const TextStyle(
                     fontSize: 12,
                     color: Colors.black54,
@@ -357,17 +318,18 @@ class _HomePageState extends State<HomePage> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const Spacer(),
-                // Wrap the info chip in Flexible to avoid overflow
                 Row(
                   children: [
                     Flexible(
-                      child: _buildInfoChip('Allergens: $allergens'),
+                      child: _buildInfoChip(
+                        'Allergens: ${item.allergens.join(', ')}',
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Nutritional info: $nutrition',
+                  'Nutritional info: ${item.nutrition.entries.map((e) => '${e.key}: ${e.value}').join(', ')}',
                   style: const TextStyle(
                     fontSize: 10,
                     color: Colors.black45,
@@ -401,7 +363,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// Custom CartBadge widget definition
+// Custom CartBadge widget.
 class CartBadge extends StatelessWidget {
   final Widget child;
   final String value;

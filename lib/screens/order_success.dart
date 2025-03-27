@@ -39,7 +39,7 @@ class _OrderSuccessPageState extends State<OrderSuccessPage> with SingleTickerPr
 
     // Auto-navigate to home screen after some time
     Future.delayed(const Duration(seconds: 4), () {
-      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
     });
   }
 
@@ -126,7 +126,7 @@ class _OrderSuccessPageState extends State<OrderSuccessPage> with SingleTickerPr
                         ),
                       ),
                       onPressed: () {
-                        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
                       },
                       child: Text(
                         'Back to Home',

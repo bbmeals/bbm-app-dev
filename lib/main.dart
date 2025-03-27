@@ -30,6 +30,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:built_better_app/theme/app_theme.dart';
 import 'package:built_better_app/providers/cart_provider.dart';
+import 'package:built_better_app/providers/menu_provider.dart';
 import 'package:built_better_app/screens/homepage.dart';
 import 'package:built_better_app/screens/menu_page.dart';
 import 'package:built_better_app/screens/cart_page.dart';
@@ -38,6 +39,7 @@ import 'package:built_better_app/screens/otp.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:built_better_app/screens/phone_auth.dart';
 import 'package:built_better_app/screens/checkout_page.dart';
+import 'package:built_better_app/screens/registrationScreen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -61,6 +63,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (ctx) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => RestaurantProvider()..loadRestaurantData()),
       ],
       child: MaterialApp(
         title: 'Built Better App',
@@ -72,11 +75,13 @@ class MyApp extends StatelessWidget {
           '/menu': (context) => MenuPage(),
           '/cart': (context) => const CartPage(),
           '/': (context) => const PhoneNumberScreen(),
-          // '/': (context) => MenuPage(),
-          // '/otp': (context) => const OtpScreen(),
           '/otp': (context) {
             final verificationId = ModalRoute.of(context)?.settings.arguments as String;
             return OtpScreen(verificationId: verificationId);
+          },
+          '/register': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>;
+            return RegistrationScreen(phone: args['phone']);
           },
           '/home': (context) => const HomePage(),
           // '/': (context) => const PhoneAuthScreen(),

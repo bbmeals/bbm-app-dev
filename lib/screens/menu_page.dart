@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
+import '../providers/menu_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/cart_services.dart';
 import '../providers/item_counter.dart';
-import '../services/restaurant_service.dart';
 import '../models/restaurant.dart';
 import 'package:built_better_app/components/navbar.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
 
 class MenuPage extends StatefulWidget {
   @override
@@ -17,17 +16,21 @@ class MenuPage extends StatefulWidget {
 
 class _MenuPageState extends State<MenuPage> {
   String _activeFilter = 'All';
-  late Future<Restaurant> restaurantFuture;
 
   @override
   void initState() {
     super.initState();
-    restaurantFuture = fetchRestaurantData();
+    // Removed: restaurantFuture = fetchRestaurantData();
   }
 
   @override
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
+    final restaurantProvider = Provider.of<RestaurantProvider>(context);
+    final Restaurant? restaurant = restaurantProvider.restaurant;
+    final bool isLoading = restaurantProvider.isLoading;
+    final String? error = restaurantProvider.error;
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -60,57 +63,47 @@ class _MenuPageState extends State<MenuPage> {
         },
       ),
       body: SafeArea(
-        child: FutureBuilder<Restaurant>(
-          future: restaurantFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            } else if (snapshot.hasData) {
-              final restaurant = snapshot.data!;
-              // Example filter list
-              List<String> filters = [
-                'All',
-                'Main Course',
-                'Salad',
-                'Wrap',
-                'Soup',
-                'Sandwich',
-                'Rice Bowl',
-                'Snack'
-              ];
-              // Filter menu items based on active filter.
-              final filteredMenu = _activeFilter == 'All'
-                  ? restaurant.menu
-                  : restaurant.menu
-                  .where((item) => item.category == _activeFilter)
-                  .toList();
-              // Build menu item widgets.
-              final menuWidgets = filteredMenu
-                  .map((item) => _buildMenuItem(item, cartProvider))
-                  .toList();
-              // Insert the promotional banner if there are enough items.
-              if (filteredMenu.length > 2) {
-                menuWidgets.insert(2, _buildTrustTheChefCard(cartProvider));
-              }
-              return Column(
-                children: [
-                  _buildFilterRow(filters),
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: menuWidgets,
-                    ),
-                  ),
-                ],
-              );
-            }
-            return const SizedBox.shrink();
-          },
-        ),
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : error != null
+            ? Center(child: Text('Error: $error'))
+            : restaurant != null
+            ? Column(
+          children: [
+            _buildFilterRow(
+              ['All']..addAll(restaurant.menu.map((item) => item.category).toSet().toList()),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: _buildMenuWidgets(restaurant, cartProvider),
+              ),
+            ),
+          ],
+        )
+            : const SizedBox.shrink(),
       ),
     );
+  }
+
+  List<Widget> _buildMenuWidgets(Restaurant restaurant, CartProvider cartProvider) {
+    // Dynamically generate filters based on menu categories.
+    final List<String> filters = ['All'];
+    filters.addAll(restaurant.menu.map((item) => item.category).toSet().toList());
+
+    // Filter menu items based on the active filter.
+    final filteredMenu = _activeFilter == 'All'
+        ? restaurant.menu
+        : restaurant.menu.where((item) => item.category == _activeFilter).toList();
+
+    // Build menu item widgets.
+    final menuWidgets = filteredMenu.map((item) => _buildMenuItem(item, cartProvider)).toList();
+
+    // Insert the promotional banner if there are enough items.
+    if (filteredMenu.length > 2) {
+      menuWidgets.insert(2, _buildTrustTheChefCard(cartProvider));
+    }
+    return menuWidgets;
   }
 
   Widget _buildFilterRow(List<String> filters) {
@@ -187,7 +180,7 @@ class _MenuPageState extends State<MenuPage> {
                 bottom: 8,
                 right: 8,
                 child: AnimatedItemCounter(
-                  productId: item.name,
+                  productId: item.id,
                   onAdd: () {
                     // Instead of directly adding, open the customization modal.
                     _showMenuItemDetails(item, cartProvider);
@@ -341,23 +334,23 @@ class _MenuPageState extends State<MenuPage> {
                           ),
                           const SizedBox(height: 16),
                           // Item title and price.
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Text(
-                                  item.name,
-                                  style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold),
-                                ),
+                              Text(
+                                item.name,
+                                style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold),
                               ),
+                              const SizedBox(height: 4),
                               Text(
                                 '\$${item.price.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.primary),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
                               ),
                             ],
                           ),
@@ -410,20 +403,25 @@ class _MenuPageState extends State<MenuPage> {
                             onPressed: () async {
                               String updatedDescription = item.description;
                               if (selectedCustomizations.isNotEmpty) {
-                                updatedDescription += "\nCustomizations: ${selectedCustomizations.join(', ')}";
+                                updatedDescription +=
+                                "\nCustomizations: ${selectedCustomizations.join(', ')}";
                               }
 
                               final storage = FlutterSecureStorage();
-                              final storedUserId = await storage.read(key: 'userId');
+                              final storedUserId =
+                              await storage.read(key: 'userId');
 
                               // First, call the server and await the returned document id.
                               final documentId = await sendCartItemToServer(
                                 userId: storedUserId!, // Replace with your actual user id if needed.
-                                restaurantId: 'bbm',  // Supply the appropriate restaurant id.
+                                restaurantId: 'bbm', // Supply the appropriate restaurant id.
                                 itemId: item.id,
                                 quantity: 1,
                                 priceSnapshot: item.price.toDouble(),
-                                customization: {'customizations': selectedCustomizations.join(', ')},
+                                customization: {
+                                  'customizations':
+                                  selectedCustomizations.join(', ')
+                                },
                               );
 
                               // Now add the item using the returned document id.
@@ -434,22 +432,25 @@ class _MenuPageState extends State<MenuPage> {
                                 image: item.imageUrl,
                                 description: updatedDescription,
                                 allergens: item.allergens.join(', '),
-                                nutritionInfo: item.nutrition.entries.map((e) => '${e.key}: ${e.value}').join(', '),
+                                nutritionInfo: item.nutrition.entries
+                                    .map((e) => '${e.key}: ${e.value}')
+                                    .join(', '),
                                 docId: documentId,
+                                menuItemId: item.id,
+                                category: item.category,
                               );
 
                               Navigator.pop(context);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('${item.name} added to cart with customizations'),
+                                  content: Text(
+                                      '${item.name} added to cart with customizations'),
                                   duration: const Duration(seconds: 1),
                                   behavior: SnackBarBehavior.floating,
                                 ),
                               );
                             },
-
                             child: const Text('Add to Cart'),
-
                           ),
                         ],
                       ),
@@ -504,8 +505,7 @@ class _MenuPageState extends State<MenuPage> {
                   ),
                 ),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
@@ -543,22 +543,12 @@ class _MenuPageState extends State<MenuPage> {
                       backgroundColor: Colors.white,
                       foregroundColor: AppColors.secondary,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
                     ),
                     onPressed: () {
-                      // cartProvider.addItem(
-                      //   productId: chefSpecialId,
-                      //   title: "Chef's Special",
-                      //   price: 9.95,
-                      //   image: 'assets/images/Food1.jpg',
-                      //   description: "Chef's surprise creation of the day",
-                      //   allergens: 'Ask server',
-                      //   nutritionInfo: 'Ask server',
-                      // );
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text("Chef's Special added to cart"),
@@ -580,15 +570,7 @@ class _MenuPageState extends State<MenuPage> {
                 AnimatedItemCounter(
                   productId: chefSpecialId,
                   onAdd: () {
-                    // cartProvider.addItem(
-                    //   productId: chefSpecialId,
-                    //   title: "Chef's Special",
-                    //   price: 9.95,
-                    //   image: 'assets/images/Food1.jpg',
-                    //   description: "Chef's surprise creation of the day",
-                    //   allergens: 'Ask server',
-                    //   nutritionInfo: 'Ask server',
-                    // );
+                    // You can add logic for the chef special here if needed.
                   },
                   onRemove: () {
                     cartProvider.decrementItem(chefSpecialId);

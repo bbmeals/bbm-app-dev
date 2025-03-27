@@ -1,13 +1,17 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:built_better_app/providers/cart_provider.dart';
 import 'package:built_better_app/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_services.dart';
-
+import '../services/order_service.dart'; // Import the order service with addOrderNote functionality
 import '../utils/transition.dart';
 import '../utils/utils.dart';
 import 'checkout_page.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../models/restaurant.dart';
+import '../services/restaurant_service.dart';
+import '../providers/menu_provider.dart'; // Import your RestaurantProvider
 
 /// Helper widget to load either a network image or asset image.
 Widget loadImage(String imageUrl,
@@ -19,13 +23,21 @@ Widget loadImage(String imageUrl,
   }
 }
 
-class CartPage extends StatelessWidget {
+class CartPage extends StatefulWidget {
   const CartPage({Key? key}) : super(key: key);
+
+  @override
+  _CartPageState createState() => _CartPageState();
+}
+
+class _CartPageState extends State<CartPage> {
+  String _orderNote = "";
 
   @override
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
-    final cartItems = cartProvider.items.values.toList();
+    // Convert the items map to a list of map entries to access both key and value.
+    final cartItems = cartProvider.items.entries.toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -59,8 +71,11 @@ class CartPage extends StatelessWidget {
                       height: 32,
                       color: AppColors.divider,
                     ),
-                    itemBuilder: (context, index) =>
-                        _buildCartItem(context, cartItems[index]),
+                    itemBuilder: (context, index) {
+                      final productId = cartItems[index].key;
+                      final item = cartItems[index].value;
+                      return _buildCartItem(context, productId, item);
+                    },
                   ),
                   // Add note section
                   _buildAddNoteSection(context),
@@ -88,7 +103,7 @@ class CartPage extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Recommended items section
+                  // Recommended items section (modified)
                   _buildRecommendedItems(context),
                 ],
               ),
@@ -160,11 +175,11 @@ class CartPage extends StatelessWidget {
     );
   }
 
-  Widget _buildCartItem(BuildContext context, CartItem item) {
-    final cartProvider = Provider.of<CartProvider>(context);
+  Widget _buildCartItem(BuildContext context, String productId, CartValue item) {
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
 
     return Dismissible(
-      key: Key(item.id),
+      key: Key(productId),
       background: Container(
         color: Colors.red[400],
         alignment: Alignment.centerRight,
@@ -173,7 +188,7 @@ class CartPage extends StatelessWidget {
       ),
       direction: DismissDirection.endToStart,
       onDismissed: (_) {
-        cartProvider.removeItem(item.id);
+        cartProvider.removeItem(productId);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${item.title} removed from cart'),
@@ -182,15 +197,7 @@ class CartPage extends StatelessWidget {
             action: SnackBarAction(
               label: 'UNDO',
               onPressed: () {
-                // cartProvider.addItem(
-                //   productId: item.id,
-                //   title: item.title,
-                //   price: item.price,
-                //   image: item.image,
-                //   description: item.description,
-                //   allergens: item.allergens,
-                //   nutritionInfo: item.nutritionInfo,
-                // );
+                // Optionally implement undo logic.
               },
             ),
           ),
@@ -257,14 +264,13 @@ class CartPage extends StatelessWidget {
                       final storage = FlutterSecureStorage();
                       final storedUserId = await storage.read(key: 'userId');
                       if (storedUserId != null) {
-                        cartProvider.updateQuantity(item.id, item.quantity - 1);
+                        cartProvider.updateQuantity(productId, item.quantity - 1);
                         await updateCartItemQuantity(
                           userId: storedUserId,
-                          cartItemId: item.id,
+                          cartItemId: productId,
                           quantity: item.quantity - 1,
                         );
                       } else {
-                        // Handle the case where the user ID is not found.
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('User ID not found')),
                         );
@@ -282,21 +288,19 @@ class CartPage extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // For the add button:
                   _buildRoundedButton(
                     icon: Icons.add,
                     onPressed: () async {
                       final storage = FlutterSecureStorage();
                       final storedUserId = await storage.read(key: 'userId');
                       if (storedUserId != null) {
-                        cartProvider.updateQuantity(item.id, item.quantity + 1);
+                        cartProvider.updateQuantity(productId, item.quantity + 1);
                         await updateCartItemQuantity(
                           userId: storedUserId,
-                          cartItemId: item.id,
+                          cartItemId: productId,
                           quantity: item.quantity + 1,
                         );
                       } else {
-                        // Handle error if userId isn't found.
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('User ID not found')),
                         );
@@ -347,19 +351,20 @@ class CartPage extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.note_add_outlined,
-                color: AppColors.textSecondary),
+            const Icon(Icons.note_add_outlined, color: AppColors.textSecondary),
             const SizedBox(width: 16),
-            const Expanded(
+            Expanded(
               child: Text(
-                'Add a note',
-                style: TextStyle(
+                Provider.of<CartProvider>(context).orderNote.isEmpty
+                    ? 'Add a note'
+                    : Provider.of<CartProvider>(context).orderNote,
+                style: const TextStyle(
                   fontSize: 16,
                   color: AppColors.text,
                 ),
               ),
             ),
-            Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
           ],
         ),
       ),
@@ -367,7 +372,8 @@ class CartPage extends StatelessWidget {
   }
 
   void _showAddNoteDialog(BuildContext context) {
-    final TextEditingController controller = TextEditingController();
+    final TextEditingController controller =
+    TextEditingController(text: _orderNote);
 
     showDialog(
       context: context,
@@ -386,15 +392,35 @@ class CartPage extends StatelessWidget {
             child: const Text('CANCEL'),
           ),
           TextButton(
-            onPressed: () {
-              // Save note logic here
-              Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Note added to your order'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+            onPressed: () async {
+              final note = controller.text.trim();
+              Navigator.of(ctx).pop(); // Close the dialog first.
+              if (note.isNotEmpty) {
+                // Retrieve user ID from secure storage.
+                final storage = FlutterSecureStorage();
+                final storedUserId = await storage.read(key: 'userId');
+                if (storedUserId != null) {
+                  try {
+                    Provider.of<CartProvider>(context, listen: false)
+                        .setOrderNote(note);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Note added to your order'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to add note: $e')),
+                    );
+                  }
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('User ID not found')),
+                  );
+                }
+              }
             },
             child: const Text('SAVE'),
           ),
@@ -403,38 +429,23 @@ class CartPage extends StatelessWidget {
     );
   }
 
+  /// Recommended items section (modified)
   Widget _buildRecommendedItems(BuildContext context) {
-    // Sample recommended items.
-    final List<Map<String, dynamic>> recommendedItems = [
-      {
-        'id': '5',
-        'title': 'Roasted Salmon',
-        'price': 7.95,
-        'description':
-        'Roasted salmon with rice, vegetables and sauce.',
-        'allergens': 'Dairy, Gluten',
-        'nutrition': '450kcal, 38g protein, 45g fat',
-        'image': 'assets/images/Food1.jpg',
-      },
-      {
-        'id': '6',
-        'title': 'Garden Salad',
-        'price': 5.95,
-        'description': 'Fresh garden salad with vinaigrette.',
-        'allergens': 'None',
-        'nutrition': '180kcal, 5g protein, 9g fat',
-        'image': 'assets/images/Food1.jpg',
-      },
-      {
-        'id': '7',
-        'title': 'Chocolate Mousse',
-        'price': 4.95,
-        'description': 'Rich chocolate mousse dessert.',
-        'allergens': 'Dairy, Eggs',
-        'nutrition': '350kcal, 5g protein, 22g fat',
-        'image': 'assets/images/Food1.jpg',
-      },
-    ];
+    final restaurantProvider = Provider.of<RestaurantProvider>(context);
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    final Restaurant? restaurant = restaurantProvider.restaurant;
+
+    if (restaurant == null) return const SizedBox.shrink();
+
+    // Filter out recommendations that are already added to cart.
+    final recommendedItems = restaurant.menu
+        .where((menuItem) =>
+    menuItem.recommended &&
+        !cartProvider.getAllMenuItems().contains(menuItem.id))
+        .toList();
+
+
+    if (recommendedItems.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -454,7 +465,7 @@ class CartPage extends StatelessWidget {
             itemCount: recommendedItems.length,
             itemBuilder: (context, index) {
               final item = recommendedItems[index];
-              return _buildRecommendedItemCard(context, item);
+              return _buildRecommendedItemCard(context, item, cartProvider);
             },
           ),
         ),
@@ -463,10 +474,9 @@ class CartPage extends StatelessWidget {
     );
   }
 
+  /// Recommended item card using provider data.
   Widget _buildRecommendedItemCard(
-      BuildContext context, Map<String, dynamic> item) {
-    final cartProvider = Provider.of<CartProvider>(context);
-
+      BuildContext context, MenuItem item, CartProvider cartProvider) {
     return Container(
       width: 150,
       height: 150,
@@ -485,7 +495,7 @@ class CartPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Image section with fixed height
+          // Image section with fixed height.
           SizedBox(
             height: 100,
             width: double.infinity,
@@ -495,7 +505,7 @@ class CartPage extends StatelessWidget {
                   borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(12)),
                   child: loadImage(
-                    item['image'],
+                    item.imageUrl,
                     height: 100,
                     width: double.infinity,
                     fit: BoxFit.cover,
@@ -505,19 +515,9 @@ class CartPage extends StatelessWidget {
                   bottom: 8,
                   right: 8,
                   child: GestureDetector(
-                    // onTap: () {
-                    //   cartProvider.addItem(
-                    //     productId: item['id'],
-                    //     title: item['title'],
-                    //     price: item['price'],
-                    //     image: item['image'],
-                    //     description: item['description'],
-                    //     allergens: item['allergens'],
-                    //     nutritionInfo: item['nutrition'],
-                    //   );
-                    //   showSuccessToast(
-                    //       context, '${item['title']} added to cart');
-                    // },
+                    onTap: () {
+                      _showMenuItemDetails(item, cartProvider);
+                    },
                     child: Container(
                       width: 28,
                       height: 28,
@@ -543,8 +543,8 @@ class CartPage extends StatelessWidget {
               ],
             ),
           ),
-          // Text content section
-          Expanded(
+          // Text content section.
+          Flexible(
             child: Padding(
               padding: const EdgeInsets.all(8.0),
               child: Column(
@@ -552,9 +552,9 @@ class CartPage extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    item['title'],
+                    item.name,
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                     maxLines: 1,
@@ -562,9 +562,9 @@ class CartPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '\$${item['price'].toStringAsFixed(2)}',
+                    '\$${item.price.toStringAsFixed(2)}',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: AppColors.primary,
                     ),
@@ -573,8 +573,216 @@ class CartPage extends StatelessWidget {
               ),
             ),
           ),
+
         ],
       ),
+    );
+  }
+
+  /// The same modal for customization as in your menu page.
+  void _showMenuItemDetails(MenuItem item, CartProvider cartProvider) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        // Example list of available customizations.
+        final List<String> availableCustomizations = [
+          'chicken',
+          'shrimp',
+          'cheese',
+          'broccoli'
+        ];
+        // Selected customizations (initially empty).
+        List<String> selectedCustomizations = [];
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              maxChildSize: 0.9,
+              minChildSize: 0.5,
+              builder: (context, scrollController) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius:
+                    BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header with image and close button.
+                          Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(20)),
+                                child: (item.imageUrl.isNotEmpty)
+                                    ? Image.network(
+                                  item.imageUrl,
+                                  width: double.infinity,
+                                  height: 250,
+                                  fit: BoxFit.cover,
+                                )
+                                    : Image.asset(
+                                  'assets/images/placeholder.png',
+                                  width: double.infinity,
+                                  height: 250,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 16,
+                                right: 16,
+                                child: GestureDetector(
+                                  onTap: () => Navigator.of(context).pop(),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.9),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close,
+                                        color: Colors.black87),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Item title and price.
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.name,
+                                style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '\$${item.price.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            item.description,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          const SizedBox(height: 16),
+                          // Existing details.
+                          Text(
+                            'Allergens: ${item.allergens.join(', ')}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Nutritional Info: ${item.nutrition.entries.map((e) => '${e.key}: ${e.value}').join(', ')}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 16),
+                          // Ingredient customization section.
+                          const Text(
+                            'Customize Ingredients',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Column(
+                            children: availableCustomizations.map((option) {
+                              bool isSelected =
+                              selectedCustomizations.contains(option);
+                              return CheckboxListTile(
+                                title: Text(option),
+                                value: isSelected,
+                                onChanged: (bool? value) {
+                                  setModalState(() {
+                                    if (value == true) {
+                                      selectedCustomizations.add(option);
+                                    } else {
+                                      selectedCustomizations.remove(option);
+                                    }
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 24),
+                          // Add to cart button with customizations.
+                          ElevatedButton(
+                            onPressed: () async {
+                              String updatedDescription = item.description;
+                              if (selectedCustomizations.isNotEmpty) {
+                                updatedDescription +=
+                                "\nCustomizations: ${selectedCustomizations.join(', ')}";
+                              }
+
+                              final storage = FlutterSecureStorage();
+                              final storedUserId =
+                              await storage.read(key: 'userId');
+
+                              // First, call the server and await the returned document id.
+                              final documentId = await sendCartItemToServer(
+                                userId: storedUserId!, // Replace with your actual user id if needed.
+                                restaurantId: 'bbm', // Supply the appropriate restaurant id.
+                                itemId: item.id,
+                                quantity: 1,
+                                priceSnapshot: item.price.toDouble(),
+                                customization: {
+                                  'customizations':
+                                  selectedCustomizations.join(', ')
+                                },
+                              );
+
+                              // Now add the item using the returned document id.
+                              cartProvider.addItem(
+                                productId: item.name,
+                                title: item.name,
+                                price: item.price.toDouble(),
+                                image: item.imageUrl,
+                                description: updatedDescription,
+                                allergens: item.allergens.join(', '),
+                                nutritionInfo: item.nutrition.entries
+                                    .map((e) => '${e.key}: ${e.value}')
+                                    .join(', '),
+                                docId: documentId,
+                                menuItemId: item.id,
+                                category: item.category,
+                              );
+
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      '${item.name} added to cart with customizations'),
+                                  duration: const Duration(seconds: 1),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                            child: const Text('Add to Cart'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
@@ -666,8 +874,8 @@ class CartPage extends StatelessWidget {
         onPressed: cartProvider.items.isEmpty
             ? null
             : () {
-          Navigator.of(context).push(
-              SlideUpPageRoute(page: const CheckoutPage()));
+          Navigator.of(context)
+              .push(SlideUpPageRoute(page: const CheckoutPage()));
         },
         child: const Text(
           'Go to checkout',

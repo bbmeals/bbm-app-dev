@@ -65,7 +65,7 @@ class _AnimatedItemCounterState extends State<AnimatedItemCounter>
   Widget build(BuildContext context) {
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
-        final int quantity = cartProvider.getItemQuantity(widget.productId);
+        final int quantity = cartProvider.getTotalQuantityByMenuItemId(widget.productId);
         final bool isInCart = quantity > 0;
 
         return AnimatedSwitcher(
